@@ -105,33 +105,50 @@ docker-compose exec image-tools python -m unittest discover -s tests -p "test_*.
 - ✅ Accesible en `http://localhost:8070`
 - ✅ Logs disponibles con `docker-compose logs`
 
-### Deployment en Kubernetes (AKS)
+### Deployment en Kubernetes
 
-**Variables de configuración requeridas en el ConfigMap `image-tools-configmap`:**
+El proyecto incluye configuración Kubernetes local en la carpeta `k8s/`:
 
-```yaml
-IMAGE_TOOLS_API_GLOBAL_PREFIX: "/api/v1"
-IMAGE_TOOLS_API_TOKENS: "<comma-separated-tokens>"
-FTP_HOST: "ftp.example.com"
-FTP_PATH: "/signatures"
-MAX_UPLOAD_MB: "10"
-IMAGE_PROCESS_VALIDATE_HTTPS_URL: "true"  # Recomendado en producción
-LOG_LEVEL: "INFO"
+```bash
+k8s/
+├── configmap.yaml        # ConfigMap con variables no sensibles
+├── secret.example.yaml    # Template para crear secret real
+└── secret.yaml            # Secret real para desarrollo local (no versionado)
 ```
 
-**Secretos en `image-tools-configmap-secret`:**
+**Configuración local con kubectl:**
 
-```yaml
-FTP_USER: "<user>"
-FTP_PASS: "<password>"
-AZURE_BLOB_STORAGE_CONNECTION_STRING: "<connection-string>"
+```bash
+# 1. Crear secret real desde el template
+cp k8s/secret.example.yaml k8s/secret.yaml
+# Editar k8s/secret.yaml con tus valores reales
+
+# 2. Aplicar configuración al cluster
+kubectl apply -f k8s/configmap.yaml
+kubectl apply -f k8s/secret.yaml
+kubectl apply -f aks.yml
 ```
+
+**Variables en ConfigMap (`k8s/configmap.yaml`):**
+- `IMAGE_TOOLS_API_GLOBAL_PREFIX` - Prefijo de API (default: /api/v1)
+- `IMAGE_TOOLS_API_TOKENS` - Tokens de API separados por coma
+- `FTP_HOST` - Servidor FTP
+- `FTP_PATH` - Ruta en FTP
+- `FTP_USER` - Usuario FTP
+- `MAX_UPLOAD_MB` - Tamaño máximo de upload (default: 10)
+- `IMAGE_PROCESS_VALIDATE_HTTPS_URL` - Validar HTTPS (true/false)
+- `ENVIRONMENT` - Entorno (production/development)
+- `LOG_LEVEL` - Nivel de logging
+
+**Secretos en Secret (`k8s/secret.yaml`):**
+- `FTP_PASS` - Contraseña FTP
+- `AZURE_BLOB_STORAGE_CONNECTION_STRING` - Connection string de Azure Blob Storage
 
 **Notas de seguridad:**
-- ✅ `IMAGE_PROCESS_VALIDATE_HTTPS_URL=true` en producción (rechaza URLs HTTP inseguras)
-- ✅ `IMAGE_PROCESS_VALIDATE_HTTPS_URL=false` en desarrollo local (permite testing)
-- ✅ Valores sensibles (FTP_PASS, Azure conn string) en Secrets, no en ConfigMap
-- ✅ Los tokens de API nunca se exponen en logs (logging sanitizado)
+- ✅ `k8s/secret.yaml` está en `.gitignore` para no versionar secrets reales
+- ✅ Usa `k8s/secret.example.yaml` como template para tu configuración
+- ✅ `IMAGE_PROCESS_VALIDATE_HTTPS_URL=true` en producción
+- ✅ Los tokens de API nunca se exponen en logs
 
 ## Nuevo endpoint genérico: image-process
 

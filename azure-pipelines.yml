@@ -1,61 +1,106 @@
-name: $(TeamProject)_$(Build.DefinitionName)_$(date:yyyyMMdd)$(Hours)_$(rev:.r)
+name: image-tools-$(Build.BuildId)
 trigger:
 - main
 - qa
+
 variables:
   - name: isMainBranch
     value: $[eq(variables['Build.SourceBranch'], 'refs/heads/main')]
   - name: isQABranch
     value: $[eq(variables['Build.SourceBranch'], 'refs/heads/qa')]
-  - ${{ if eq(variables['Build.SourceBranch'], 'refs/heads/main') }}:
-    - group: AZURE_PORTAL_PROD_LIBRARY_AI
-  - ${{ if eq(variables['Build.SourceBranch'], 'refs/heads/qa') }}:
-    - group: AZURE_PORTAL_QA_LIBRARY_AI
   - name: BUILD_TAG
     value: $(Build.BuildId)
- 
+  - name: AKS_IMAGE_TOOLS_IMAGE_NAME
+    value: image-tools
+  - name: AKS_NAMESPACE
+    value: default
+
 pool:
   vmImage: ubuntu-latest
- 
-resources:
-  repositories:
-    - repository: PipelineRepository
-      type: git
-      name: your-org/common-pipeline-template-python
-      ref: refs/heads/multiPoolDeploy
- 
+
 stages:
+  - stage: Build
+    displayName: Build Docker Image
+    jobs:
+      - job: Build
+        steps:
+          - task: Docker@2
+            displayName: Build and push image
+            inputs:
+              command: buildAndPush
+              dockerfile: Dockerfile
+              repository: $(AKS_IMAGE_TOOLS_IMAGE_NAME)
+              containerRegistry: $(CONTAINER_REGISTRY_CONNECTION)
+              tags: |
+                $(Build.BuildId)
+                latest
+
   - stage: DeployQA
-    displayName: DeployQA
+    displayName: Deploy QA
     condition: and(eq(variables.isQABranch, true), eq(variables.isMainBranch, false))
+    dependsOn: Build
     jobs:
-      - template: 00_pipeline.yml@PipelineRepository
-        parameters:
-          deployName: "IMAGE_TOOLS_QA"
-          environment: qa
-          displayName: "Deploy QA"
-          agentPoolName: 'Azure Pipelines'
-          dockerVersion: $(DOCKER_VERSION)
-          crServiceConnection: $(CONTAINER_REGISTRY_CONNECTION)
-          aksImageName: $(AKS_IMAGE_TOOLS_IMAGE_NAME)
-          fileAksReplaceTokenPath: "$(System.DefaultWorkingDirectory)/aks.yml"
-          aksServiceConnection: $(AKS_SERVICE_CONNECTION)
-          aksNamespace: $(AKS_NAMESPACE)
-          aksYmlPath: "$(System.DefaultWorkingDirectory)/aks.yml"
+      - deployment: DeployQA
+        environment: qa
+        strategy:
+          runOnce:
+            deploy:
+              steps:
+                - task: KubernetesManifest@1
+                  displayName: Apply ConfigMap
+                  inputs:
+                    action: deploy
+                    kubernetesServiceConnection: $(AKS_SERVICE_CONNECTION)
+                    namespace: $(AKS_NAMESPACE)
+                    manifests: k8s/configmap.yaml
+                - task: KubernetesManifest@1
+                  displayName: Apply Secret
+                  inputs:
+                    action: deploy
+                    kubernetesServiceConnection: $(AKS_SERVICE_CONNECTION)
+                    namespace: $(AKS_NAMESPACE)
+                    manifests: k8s/secret.yaml
+                - task: KubernetesManifest@1
+                  displayName: Apply Deployment
+                  inputs:
+                    action: deploy
+                    kubernetesServiceConnection: $(AKS_SERVICE_CONNECTION)
+                    namespace: $(AKS_NAMESPACE)
+                    manifests: aks.yml
+                    containers: |
+                      $(CONTAINER_REGISTRY_CONNECTION).azurecr.io/$(AKS_IMAGE_TOOLS_IMAGE_NAME):$(Build.BuildId)
+
   - stage: DeployProduction
-    displayName: DeployProduction
+    displayName: Deploy Production
     condition: and(eq(variables.isMainBranch, true), eq(variables.isQABranch, false))
+    dependsOn: Build
     jobs:
-      - template: 00_pipeline.yml@PipelineRepository
-        parameters:
-          deployName: "IMAGE_TOOLS_PRODUCTION"
-          environment: prod
-          displayName: "Deploy Productivo"
-          agentPoolName: 'Azure Pipelines'
-          dockerVersion: $(DOCKER_VERSION)
-          crServiceConnection: $(CONTAINER_REGISTRY_CONNECTION)
-          aksImageName: $(AKS_IMAGE_TOOLS_IMAGE_NAME)
-          fileAksReplaceTokenPath: "$(System.DefaultWorkingDirectory)/aks.yml"
-          aksServiceConnection: $(AKS_SERVICE_CONNECTION)
-          aksNamespace: $(AKS_NAMESPACE)
-          aksYmlPath: "$(System.DefaultWorkingDirectory)/aks.yml"
+      - deployment: DeployProduction
+        environment: prod
+        strategy:
+          runOnce:
+            deploy:
+              steps:
+                - task: KubernetesManifest@1
+                  displayName: Apply ConfigMap
+                  inputs:
+                    action: deploy
+                    kubernetesServiceConnection: $(AKS_SERVICE_CONNECTION)
+                    namespace: $(AKS_NAMESPACE)
+                    manifests: k8s/configmap.yaml
+                - task: KubernetesManifest@1
+                  displayName: Apply Secret
+                  inputs:
+                    action: deploy
+                    kubernetesServiceConnection: $(AKS_SERVICE_CONNECTION)
+                    namespace: $(AKS_NAMESPACE)
+                    manifests: k8s/secret.yaml
+                - task: KubernetesManifest@1
+                  displayName: Apply Deployment
+                  inputs:
+                    action: deploy
+                    kubernetesServiceConnection: $(AKS_SERVICE_CONNECTION)
+                    namespace: $(AKS_NAMESPACE)
+                    manifests: aks.yml
+                    containers: |
+                      $(CONTAINER_REGISTRY_CONNECTION).azurecr.io/$(AKS_IMAGE_TOOLS_IMAGE_NAME):$(Build.BuildId)

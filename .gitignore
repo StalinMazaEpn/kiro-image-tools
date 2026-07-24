@@ -158,3 +158,6 @@ cython_debug/
 # Custom ignore folders
 request/*
 venv/*
+
+# Kubernetes secrets (local development)
+k8s/secret.yaml

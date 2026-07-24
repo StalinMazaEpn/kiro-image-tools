@@ -1,0 +1,15 @@
+apiVersion: v1
+kind: ConfigMap
+metadata:
+  name: image-tools-configmap
+  namespace: default
+data:
+  IMAGE_TOOLS_API_GLOBAL_PREFIX: "/api/v1"
+  IMAGE_TOOLS_API_TOKENS: "your-api-token-here"
+  FTP_HOST: "ftp.example.com"
+  FTP_PATH: "/signatures"
+  FTP_USER: "ftp-user"
+  MAX_UPLOAD_MB: "10"
+  IMAGE_PROCESS_VALIDATE_HTTPS_URL: "true"
+  ENVIRONMENT: "production"
+  LOG_LEVEL: "INFO"
