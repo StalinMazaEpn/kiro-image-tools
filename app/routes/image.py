@@ -1,5 +1,4 @@
 import logging
-import ftplib
 import os
 import secrets
 import tempfile
@@ -11,14 +10,11 @@ from datetime import datetime, timedelta, timezone
 from flask import jsonify, send_file, url_for
 from flask_smorest import Blueprint as SmorestBlueprint
 from app.schemas.image import (
-    ImageBannerRequestSchema,
-    ImageBannerResponseSchema,
     ImageProcessRequestSchema,
     ImageProcessResponseSchema,
     ErrorResponseSchema,
 )
 from PIL import Image
-from azure.storage.blob import BlobClient
 from dotenv import load_dotenv
 from app.middleware.auth import verify_token
 import requests
@@ -30,10 +26,6 @@ bp = SmorestBlueprint("image", __name__, description="Image service operations")
 
 # Configuración
 ALLOWED_EXTENSIONS = {".png", ".jpeg", ".jpg"}
-FTP_HOST = os.environ.get("FTP_HOST")
-FTP_USER = os.environ.get("FTP_USER")
-FTP_PASS = os.environ.get("FTP_PASS")
-FTP_PATH = os.environ.get("FTP_PATH", "/")
 
 try:
     MAX_UPLOAD_MB = int(os.environ.get("MAX_UPLOAD_MB", "10"))
@@ -74,21 +66,6 @@ TEMP_OUTPUT_DIR = Path(tempfile.gettempdir()) / "image-tools" / "image-process"
 TEMP_OUTPUT_DIR.mkdir(parents=True, exist_ok=True)
 TEMP_FILES = {}
 TEMP_FILES_LOCK = threading.Lock()
-
-BASE_DIR = Path(__file__).resolve().parent.parent.parent
-print("BASE_DIR", BASE_DIR)
-TEMPLATE_PATH = os.path.join(BASE_DIR, "assets/template.png")
-print("TEMPLATE_PATH", TEMPLATE_PATH)
-
-# Configuración de área del logo en la plantilla
-LOGO_AREA_X = 0
-LOGO_AREA_Y = 25
-LOGO_AREA_WIDTH = 240
-LOGO_AREA_HEIGHT = 184
-MAX_LOGO_WIDTH = 192
-MAX_LOGO_HEIGHT = 147.2
-
-logging.info(f"La plantilla de correo se encuentra en la ruta {TEMPLATE_PATH}")
 
 
 class PublicImageDownloadError(Exception):
@@ -302,100 +279,6 @@ def _remove_background(image):
     return rembg.remove(image, session=session)
 
 
-def process_image_to_banner(file_bytes, template_path):
-    """Procesa una imagen para crear un banner con la plantilla"""
-    try:
-        logging.info("Cargando imagen de entrada")
-
-        # Cargar imagen de entrada
-        with BytesIO(file_bytes) as bio:
-            with Image.open(bio) as input_img:
-                input_image = input_img.convert("RGBA")
-
-        # Cargar plantilla
-        with Image.open(template_path) as tpl_img:
-            template_image = tpl_img.convert("RGBA").copy()
-
-        # Remover fondo
-        logging.info("Removiendo fondo...")
-        image_no_bg = _remove_background(input_image)
-
-        # Normalizar posición del sujeto
-        logging.info("Normalizando posición del sujeto...")
-        bbox = image_no_bg.getbbox()
-
-        if bbox:
-            cropped_image = image_no_bg.crop(bbox)
-            sujeto_ancho = cropped_image.width
-            sujeto_alto = cropped_image.height
-            max_dim = max(sujeto_ancho, sujeto_alto) + 10
-
-            # Crear canvas normalizado
-            normalized_canvas = Image.new(
-                "RGBA", (max_dim, max_dim), (255, 255, 255, 0)
-            )
-            paste_x = (max_dim - sujeto_ancho) // 2
-            paste_y = (max_dim - sujeto_alto) // 2
-            normalized_canvas.paste(cropped_image, (paste_x, paste_y), cropped_image)
-            imagen_a_escalar = normalized_canvas
-        else:
-            imagen_a_escalar = image_no_bg
-
-        # Escalar imagen al tamaño máximo
-        max_size = (MAX_LOGO_WIDTH, MAX_LOGO_HEIGHT)
-        logging.info(f"Escalando la imagen normalizada al tamaño máximo: {max_size}")
-        imagen_a_escalar.thumbnail(max_size, Image.LANCZOS)
-
-        # Centrar y pegar en la plantilla
-        center_x = LOGO_AREA_X + (LOGO_AREA_WIDTH - imagen_a_escalar.width) // 2
-        center_y = LOGO_AREA_Y + (LOGO_AREA_HEIGHT - imagen_a_escalar.height) // 2
-        logging.info(
-            f"Centrando y pegando imagen en la plantilla en coordenadas: ({center_x}, {center_y})"
-        )
-        template_image.paste(imagen_a_escalar, (center_x, center_y), imagen_a_escalar)
-
-        # Cerrar recursos
-        try:
-            if "cropped_image" in locals() and isinstance(cropped_image, Image.Image):
-                cropped_image.close()
-        except Exception:
-            pass
-
-        try:
-            if "normalized_canvas" in locals() and isinstance(
-                normalized_canvas, Image.Image
-            ):
-                normalized_canvas.close()
-        except Exception:
-            pass
-
-        try:
-            if isinstance(image_no_bg, Image.Image):
-                image_no_bg.close()
-        except Exception:
-            pass
-
-        try:
-            if isinstance(input_image, Image.Image):
-                input_image.close()
-        except Exception:
-            pass
-
-        logging.info(
-            "La imagen final del banner con los cambios aplicados se generó correctamente"
-        )
-        return template_image
-
-    except FileNotFoundError:
-        logging.error(
-            "ERROR: Asegúrate de que las rutas de los archivos (INPUT_PATH y TEMPLATE_PATH) sean correctas."
-        )
-        return None
-    except Exception as e:
-        logging.error(f"Ocurrió un error durante el procesamiento: {e}")
-        return None
-
-
 def process_image_to_background(
     file_bytes,
     background_bytes,
@@ -562,31 +445,6 @@ def process_image_to_background(
         return None, None
 
 
-def upload_to_ftp(filename, file_bytes):
-    """Sube un archivo al servidor FTP"""
-    try:
-        with ftplib.FTP(FTP_HOST, timeout=30) as ftp:
-            ftp.set_debuglevel(0)
-            ftp.login(user=FTP_USER, passwd=FTP_PASS)
-
-            if FTP_PATH and FTP_PATH != "/":
-                ftp.cwd(FTP_PATH)
-
-            with BytesIO(file_bytes) as bio:
-                ftp.storbinary(f"STOR {filename}", bio)
-
-        logging.info(
-            f"El archivo {filename} del banner de la firma de correo fue subido exitosamente al servidor FTP en la ruta {FTP_PATH}."
-        )
-        return True, None
-
-    except ftplib.all_errors as e:
-        logging.error(f"Error de conexión o protocolo FTP: {e}")
-        return False, f"Error de FTP: {e}"
-    except Exception as e:
-        logging.error(f"Error desconocido en FTP: {e}")
-        return False, f"Error desconocido: {e}"
-
 @bp.get("/image/health")
 @bp.doc(security=[])
 def health():
@@ -598,232 +456,6 @@ def health():
             "service": "image",
         }
     )
-
-
-@bp.post("/image/bannercreator")
-@bp.doc(
-    security=[{"ApiKeyAuth": []}],
-    summary="Crear banner de imagen",
-    description="Procesa una imagen removiendo el fondo y la integra en una plantilla de banner. Requiere filename y storageImagePath en el JSON del request."
-)
-@bp.arguments(ImageBannerRequestSchema)
-@bp.response(200, ImageBannerResponseSchema)
-@bp.response(400, ErrorResponseSchema)
-@bp.response(401, ErrorResponseSchema)
-@bp.response(413, ErrorResponseSchema)
-@bp.response(415, ErrorResponseSchema)
-@bp.response(500, ErrorResponseSchema)
-@bp.response(502, ErrorResponseSchema)
-@verify_token
-def imagebannercreator(request_data):
-    """Endpoint principal para crear banners de imágenes"""
-
-    logging.info("Procesando solicitud de carga de archivo...")
-
-    try:
-        # Usar datos validados del schema
-        metadata = request_data
-        logging.info(f"Metadata validado: {metadata}")
-        
-        file_name = metadata.get("filename")
-        storage_image_path = metadata.get("storageImagePath")
-
-        if not file_name or not storage_image_path:
-            return (
-                jsonify(
-                    {
-                        "error": "Bad Request",
-                        "message": "'filename' y 'storageImagePath' son obligatorios en el JSON de metadata.",
-                        "success": False,
-                    }
-                ),
-                400,
-            )
-
-        # Validar extensión de archivo
-        file_ext = Path(file_name).suffix.lower()
-        if file_ext not in ALLOWED_EXTENSIONS:
-            return (
-                jsonify(
-                    {
-                        "error": "Unsupported Media Type",
-                        "message": f"Extensión de archivo no permitida: {file_ext}. Solo se permiten {', '.join(ALLOWED_EXTENSIONS)}.",
-                        "success": False,
-                    }
-                ),
-                415,
-            )
-
-        # Validar connection string de Azure Storage
-        conn_str = os.environ.get("AZURE_BLOB_STORAGE_CONNECTION_STRING")
-        if not conn_str:
-            return (
-                jsonify(
-                    {
-                        "error": "Service Unavailable",
-                        "message": "No se encontró AZURE_BLOB_STORAGE_CONNECTION_STRING en variables de entorno.",
-                        "success": False,
-                    }
-                ),
-                500,
-            )
-
-        # Parsear storage_image_path para obtener container y blob
-        container_name = None
-        blob_path = None
-
-        if "://" in storage_image_path:
-            # Es una URL completa
-            parsed = urlparse(storage_image_path)
-            path_parts = [p for p in parsed.path.split("/") if p]
-            if len(path_parts) >= 2:
-                container_name = path_parts[0]
-                blob_path = "/".join(path_parts[1:])
-        else:
-            # Es formato container/ruta/blob
-            parts = [p for p in storage_image_path.split("/") if p]
-            if len(parts) >= 2:
-                container_name = parts[0]
-                blob_path = "/".join(parts[1:])
-
-        if not container_name or not blob_path:
-            return (
-                jsonify(
-                    {
-                        "error": "Bad Request",
-                        "message": "storageImagePath no tiene un formato válido. Use una URL de blob o 'container/ruta/del/blob'.",
-                        "success": False,
-                    }
-                ),
-                400,
-            )
-
-        # Limpiar nombre
-        clean_blob_path = unquote(blob_path)
-        # Si tu string viene con un slash inicial por error, remuévelo:
-        if clean_blob_path.startswith("/"):
-            clean_blob_path = clean_blob_path.lstrip("/")
-
-        # Descargar imagen desde Azure Blob Storage
-        logging.info(
-            f"Descargando blob desde container='{container_name}', blob='{clean_blob_path}'"
-        )
-        try:
-            blob_client = BlobClient.from_connection_string(
-                conn_str, container_name=container_name, blob_name=clean_blob_path
-            )
-            file_bytes = blob_client.download_blob().readall()
-        except Exception as e:
-            logging.exception("Error al descargar la imagen desde Azure Blob Storage")
-            return (
-                jsonify(
-                    {
-                        "error": "Bad Gateway",
-                        "message": f"No se pudo descargar la imagen desde Azure Blob Storage: {str(e)}",
-                        "success": False,
-                    }
-                ),
-                502,
-            )
-
-        # Validar archivo descargado
-        if file_bytes is None or len(file_bytes) == 0:
-            return (
-                jsonify(
-                    {
-                        "error": "Bad Request",
-                        "message": "La imagen descargada está vacía.",
-                        "success": False,
-                    }
-                ),
-                400,
-            )
-
-        if len(file_bytes) > MAX_UPLOAD_BYTES:
-            return (
-                jsonify(
-                    {
-                        "error": "Payload Too Large",
-                        "message": f"El archivo supera el tamaño máximo permitido de {MAX_UPLOAD_MB} MB.",
-                        "success": False,
-                    }
-                ),
-                413,
-            )
-
-        # Preparar respuesta
-        response_data = {
-            "filename": file_name,
-            "content_type": "image/png" if file_ext == ".png" else "image/jpeg",
-            "metadata": metadata,
-        }
-
-        # Procesar imagen
-        logging.info("Procesando archivo del banner")
-        buffer_banner_image = BytesIO()
-        processed_image = process_image_to_banner(file_bytes, TEMPLATE_PATH)
-
-        if processed_image is None:
-            return (
-                jsonify(
-                    {
-                        "error": "Internal Server Error",
-                        "message": "No se pudo procesar la imagen.",
-                        "success": False,
-                    }
-                ),
-                500,
-            )
-
-        # Guardar imagen procesada en buffer
-        processed_image.save(buffer_banner_image, format="PNG")
-        buffer_banner_image.seek(0)
-        buffer_banner_image_bytes = buffer_banner_image.getvalue()
-
-        # Subir a FTP
-        success, error_msg = upload_to_ftp(file_name, buffer_banner_image_bytes)
-        print("Cerrar recursos en memoria")
-
-        # Cerrar recursos
-        try:
-            processed_image.close()
-        except Exception:
-            pass
-
-        buffer_banner_image.close()
-
-        if not success:
-            return (
-                jsonify(
-                    {
-                        "error": "Internal Server Error",
-                        "message": f"Error al procesar la imagen: {error_msg}",
-                        "success": False,
-                    }
-                ),
-                500,
-            )
-
-        # Respuesta exitosa
-        response_data["message"] = (
-            f"Se cargó la imagen en el servidor FTP en la carpeta {FTP_PATH}"
-        )
-        response_data["success"] = True
-
-        return jsonify(response_data), 200
-
-    except Exception as e:
-        logging.exception("Error procesando la solicitud.")
-        return (
-            jsonify(
-                {
-                    "error": "Internal Server Error",
-                    "message": f"Error: {str(e)}",
-                    "success": False,
-                }
-            ),
-            500,
-        )
 
 
 @bp.post("/image/image-process")

@@ -88,20 +88,6 @@ def test_remove_background(session):
         logger.error(f"Error en remoción de fondo: {e}")
         return False
 
-def test_template_path():
-    """Verifica que la plantilla exista"""
-    template_path = os.path.join(
-        Path(__file__).resolve().parent.parent,
-        "assets/template.png"
-    )
-    
-    if os.path.exists(template_path):
-        logger.info(f"Plantilla encontrada: {template_path}")
-        return True
-    else:
-        logger.warning(f"Plantilla no encontrada: {template_path}")
-        return False
-
 def main():
     """Función principal del test"""
     logger.info("Iniciando validación completa del sistema...")
@@ -109,7 +95,6 @@ def main():
     # Tests básicos
     tests = [
         ("Carga del modelo", test_model_loading),
-        ("Plantilla de imagen", test_template_path),
     ]
     
     results = []

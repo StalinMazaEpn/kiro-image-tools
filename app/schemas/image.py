@@ -1,20 +1,6 @@
 from marshmallow import Schema, fields, validate
 
 # Schemas para documentación
-class ImageBannerRequestSchema(Schema):
-    """Schema para el request de creación de banner"""
-    filename = fields.Str(
-        required=True,
-        metadata={"description": "Nombre del archivo de imagen"},
-    )
-    storageImagePath = fields.Str(
-        required=True,
-        metadata={
-            "description": "Ruta del imagen en Azure Blob Storage (container/ruta/blob o URL completa)"
-        },
-    )
-
-
 class ImageProcessRequestSchema(Schema):
     """Schema para el request de procesamiento genérico de imagen"""
     imageUrl = fields.Str(
@@ -88,19 +74,6 @@ class ImageProcessRequestSchema(Schema):
         load_default="px",
         validate=validate.OneOf(["px", "percent"]),
         metadata={"description": "Unidad de offset: px o percent"},
-    )
-
-
-class ImageBannerResponseSchema(Schema):
-    """Schema para la respuesta exitosa"""
-    filename = fields.Str(metadata={"description": "Nombre del archivo procesado"})
-    content_type = fields.Str(
-        metadata={"description": "Tipo de contenido del archivo"}
-    )
-    metadata = fields.Dict(metadata={"description": "Metadata original del request"})
-    message = fields.Str(metadata={"description": "Mensaje de éxito"})
-    success = fields.Bool(
-        metadata={"description": "Indica si la operación fue exitosa"}
     )
 
 

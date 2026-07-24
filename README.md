@@ -1,5 +1,5 @@
 # Introduction 
-Este proyecto implementa una solución optimizada para la remoción de fondos en imágenes usando el modelo U2NET y la librería rembg. La imagen final es una imagen con fondo transparente colocada sobre un fondo establecido en una imagen plantilla.
+Este proyecto implementa una solución optimizada para la remoción de fondos en imágenes usando el modelo U2NET y la librería rembg. Permite procesar imágenes removiendo el fondo y colocándolas sobre fondos dinámicos enviados por URL.
 
 ## Arquitectura Implementada
 
@@ -132,17 +132,13 @@ kubectl apply -f aks.yml
 **Variables en ConfigMap (`k8s/configmap.yaml`):**
 - `IMAGE_TOOLS_API_GLOBAL_PREFIX` - Prefijo de API (default: /api/v1)
 - `IMAGE_TOOLS_API_TOKENS` - Tokens de API separados por coma
-- `FTP_HOST` - Servidor FTP
-- `FTP_PATH` - Ruta en FTP
-- `FTP_USER` - Usuario FTP
 - `MAX_UPLOAD_MB` - Tamaño máximo de upload (default: 10)
 - `IMAGE_PROCESS_VALIDATE_HTTPS_URL` - Validar HTTPS (true/false)
 - `ENVIRONMENT` - Entorno (production/development)
 - `LOG_LEVEL` - Nivel de logging
 
 **Secretos en Secret (`k8s/secret.yaml`):**
-- `FTP_PASS` - Contraseña FTP
-- `AZURE_BLOB_STORAGE_CONNECTION_STRING` - Connection string de Azure Blob Storage
+- (No se requieren secretos para el endpoint image-process)
 
 **Notas de seguridad:**
 - ✅ `k8s/secret.yaml` está en `.gitignore` para no versionar secrets reales
@@ -150,7 +146,7 @@ kubectl apply -f aks.yml
 - ✅ `IMAGE_PROCESS_VALIDATE_HTTPS_URL=true` en producción
 - ✅ Los tokens de API nunca se exponen en logs
 
-## Nuevo endpoint genérico: image-process
+## Endpoint principal: image-process
 
 Permite procesar una imagen original y centrarla sobre un fondo dinámico enviado por URL.
 
