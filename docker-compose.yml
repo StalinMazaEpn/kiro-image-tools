@@ -1,0 +1,33 @@
+version: '3.8'
+
+services:
+  image-tools:
+    build:
+      context: .
+      dockerfile: Dockerfile
+    container_name: image-tools
+    ports:
+      - "8070:8070"
+    env_file:
+      - .env
+    environment:
+      - PORT=8070
+      - ENVIRONMENT=local
+    volumes:
+      # Volumen para cachear el modelo (opcional, acelera restarts)
+      - u2net_models:/app/models
+      # Volumen para logs (opcional)
+      - app_logs:/app/logs
+    restart: unless-stopped
+    healthcheck:
+      test: ["CMD", "curl", "-f", "http://localhost:8070/health"]
+      interval: 10s
+      timeout: 10s
+      retries: 5
+      start_period: 60s
+
+volumes:
+  u2net_models:
+    driver: local
+  app_logs:
+    driver: local

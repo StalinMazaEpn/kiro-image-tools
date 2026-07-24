@@ -1,0 +1,99 @@
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: '#{AKS_IMAGE_TOOLS_IMAGE_NAME}#-deployment'
+  namespace: '#{AKS_NAMESPACE}#'
+  labels:
+    app: '#{AKS_IMAGE_TOOLS_IMAGE_NAME}#-deployment'
+spec:
+  replicas: 1
+  selector:
+    matchLabels:
+      app: '#{AKS_IMAGE_TOOLS_IMAGE_NAME}#-deployment'
+  template:
+    metadata:
+      labels:
+        app: '#{AKS_IMAGE_TOOLS_IMAGE_NAME}#-deployment'
+    spec:
+      containers:
+      - name: '#{AKS_IMAGE_TOOLS_IMAGE_NAME}#'
+        image: '#{CONTAINER_REGISTRY_CONNECTION}#.azurecr.io/#{AKS_IMAGE_TOOLS_IMAGE_NAME}#:#{Build.BuildId}#'
+        imagePullPolicy: Always
+        ports:
+        - containerPort: 8070
+        # Variables injection
+        env:
+        - name: ENVIRONMENT
+          valueFrom:
+            configMapKeyRef:
+              name: image-tools-configmap
+              key: ENVIRONMENT
+        - name: IMAGE_TOOLS_API_TOKENS
+          valueFrom:
+            configMapKeyRef:
+              name: image-tools-configmap
+              key: IMAGE_TOOLS_API_TOKENS
+        - name: IMAGE_TOOLS_API_GLOBAL_PREFIX
+          valueFrom:
+            configMapKeyRef:
+              name: image-tools-configmap
+              key: IMAGE_TOOLS_API_GLOBAL_PREFIX
+        - name: FTP_HOST
+          valueFrom:
+            configMapKeyRef:
+              name: image-tools-configmap
+              key: FTP_HOST
+        - name: FTP_PATH
+          valueFrom:
+            configMapKeyRef:
+              name: image-tools-configmap
+              key: FTP_PATH
+        - name: FTP_USER
+          valueFrom:
+            configMapKeyRef:
+              name: image-tools-configmap
+              key: FTP_USER
+        - name: MAX_UPLOAD_MB
+          valueFrom:
+            configMapKeyRef:
+              name: image-tools-configmap
+              key: MAX_UPLOAD_MB
+        - name: IMAGE_PROCESS_VALIDATE_HTTPS_URL
+          valueFrom:
+            configMapKeyRef:
+              name: image-tools-configmap
+              key: IMAGE_PROCESS_VALIDATE_HTTPS_URL
+        - name: FTP_PASS
+          valueFrom:
+            secretKeyRef:
+              name: image-tools-configmap-secret
+              key: FTP_PASS
+        - name: AZURE_BLOB_STORAGE_CONNECTION_STRING
+          valueFrom:
+            secretKeyRef:
+              name: image-tools-configmap-secret
+              key: AZURE_BLOB_STORAGE_CONNECTION_STRING
+
+        # Resources configuration
+        resources:
+          requests:
+            cpu: "250m"
+            memory: "512Mi"
+          limits:
+            cpu: "1000m"
+            memory: "2Gi"
+---
+apiVersion: v1
+kind: Service
+metadata:
+  name: '#{AKS_IMAGE_TOOLS_IMAGE_NAME}#-service'
+  namespace: '#{AKS_NAMESPACE}#'
+spec:
+  ports:
+  - port: 8070
+    targetPort: 8070
+    name: http
+    protocol: TCP
+  selector:
+    app: '#{AKS_IMAGE_TOOLS_IMAGE_NAME}#-deployment'
+  type: NodePort
