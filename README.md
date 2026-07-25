@@ -55,11 +55,11 @@ docker run --rm image-tools:test ls -lh /app/models/
 ### Local con Python (desarrollo)
 
 ```bash
-# Activar entorno virtual
-.\venv\Scripts\Activate.ps1
+# Instalar uv (una sola vez)
+pip install uv
 
-# Instalar dependencias
-pip install -r requirements.txt
+# Instalar dependencias con uv
+uv pip install -r pyproject.toml
 
 # Ejecutar servidor Flask en localhost:8070
 python app.py
@@ -145,6 +145,66 @@ kubectl apply -f aks.yml
 - ✅ Usa `k8s/secret.example.yaml` como template para tu configuración
 - ✅ `IMAGE_PROCESS_VALIDATE_HTTPS_URL=true` en producción
 - ✅ Los tokens de API nunca se exponen en logs
+
+## Endpoints disponibles
+
+| Método | Ruta | Auth | Descripción |
+|--------|------|------|-------------|
+| GET | `/` | No | Root health — API corriendo |
+| GET | `/api/v1/health` | No | Liveness probe |
+| GET | `/api/v1/health/model` | No | Readiness probe (estado del modelo) |
+| GET | `/api/v1/image/health` | No | Health del servicio de imagen |
+| POST | `/api/v1/image/image-process` | `X-API-KEY` | Procesar imagen con fondo dinámico |
+| GET | `/api/v1/image/temp/<token>` | No | Descargar resultado temporal |
+| GET | `/api/v1/openapi/openapi.json` | No | OpenAPI spec |
+| GET | `/api/v1/openapi/docs` | No | Swagger UI |
+
+---
+
+## Probar los endpoints
+
+### Con archivo .http (recomendado para desarrollo)
+
+El archivo `api-tests.http` incluye requests listos para usar con la extensión [REST Client](https://marketplace.visualstudio.com/items?itemName=humao.rest-client) de VS Code.
+
+**Setup:**
+1. Instalar la extensión REST Client en VS Code
+2. Abrir `api-tests.http`
+3. Ajustar la variable `@apiToken` con tu token real (definido en `IMAGE_TOOLS_API_TOKENS` del `.env`)
+4. Click en "Send Request" sobre cualquier request
+
+**Incluye:**
+- Health checks (liveness, readiness, service)
+- Request básico y completo de `image-process`
+- Ejemplos con offset en porcentaje y alineaciones
+- Casos de error esperados (401, 400, 422, 404)
+- Descarga de imagen temporal
+- OpenAPI spec
+
+### Con Swagger UI
+
+La API incluye documentación interactiva con Swagger UI:
+
+```
+http://localhost:8070/api/v1/openapi/docs
+```
+
+Desde ahí puedes explorar y ejecutar los endpoints directamente en el navegador.
+
+### Con curl
+
+```bash
+# Health check
+curl http://localhost:8070/api/v1/health
+
+# Image process
+curl -X POST http://localhost:8070/api/v1/image/image-process \
+  -H "X-API-KEY: tu-token" \
+  -H "Content-Type: application/json" \
+  -d '{"imageUrl":"https://example.com/img.png","backgroundUrl":"https://example.com/bg.png","outputFilename":"out.png"}'
+```
+
+---
 
 ## Endpoint principal: image-process
 

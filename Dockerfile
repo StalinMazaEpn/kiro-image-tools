@@ -7,7 +7,8 @@ WORKDIR /app
 ENV PYTHONPATH=/app \
     U2NET_HOME=/app/models \
     PYTHONDONTWRITEBYTECODE=1 \
-    PYTHONUNBUFFERED=1
+    PYTHONUNBUFFERED=1 \
+    NUMBA_DISABLE_JIT=1
 
 # Install system dependencies
 RUN apt-get update && apt-get install -y \
@@ -18,12 +19,15 @@ RUN apt-get update && apt-get install -y \
     build-essential \
     libgomp1 \
     && rm -rf /var/lib/apt/lists/*
- 
-# Copy requirements first for better caching
-COPY requirements.txt .
- 
-# Install Python dependencies
-RUN pip install --no-cache-dir -r requirements.txt
+
+# Install uv
+RUN pip install --no-cache-dir uv
+
+# Copy pyproject.toml
+COPY pyproject.toml .
+
+# Install Python dependencies with uv
+RUN uv pip install --system -r pyproject.toml
 
 # Pre-descargar el modelo DURANTE el build
 # El modelo queda en /app/models/u2net.onnx dentro de la imagen.

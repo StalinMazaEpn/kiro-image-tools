@@ -45,6 +45,9 @@ def create_app():
 
     # Get dynamic global prefix
     global_prefix = os.getenv("IMAGE_TOOLS_API_GLOBAL_PREFIX", "/api/v1")
+    # Asegurar que el prefijo siempre empiece con /
+    if global_prefix and not global_prefix.startswith("/"):
+        global_prefix = f"/{global_prefix}"
 
     # Flask-Smorest configuration
     app.config["API_TITLE"] = "Image Processing Tools API"

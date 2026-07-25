@@ -13,6 +13,11 @@ services:
     environment:
       - PORT=8070
       - ENVIRONMENT=local
+      # Desactiva JIT de numba (dependencia transitiva de PyMatting/rembg)
+      # Evita el loop infinito de compilación JIT durante el startup
+      - NUMBA_DISABLE_JIT=1
+      # Silencia logs de compilación de numba si LOG_LEVEL=DEBUG
+      - NUMBA_LOG_LEVEL=WARNING
     volumes:
       # Volumen para cachear el modelo (opcional, acelera restarts)
       - u2net_models:/app/models
@@ -21,10 +26,10 @@ services:
     restart: unless-stopped
     healthcheck:
       test: ["CMD", "curl", "-f", "http://localhost:8070/health"]
-      interval: 10s
+      interval: 15s
       timeout: 10s
       retries: 5
-      start_period: 60s
+      start_period: 120s
 
 volumes:
   u2net_models:

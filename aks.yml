@@ -38,21 +38,6 @@ spec:
             configMapKeyRef:
               name: image-tools-configmap
               key: IMAGE_TOOLS_API_GLOBAL_PREFIX
-        - name: FTP_HOST
-          valueFrom:
-            configMapKeyRef:
-              name: image-tools-configmap
-              key: FTP_HOST
-        - name: FTP_PATH
-          valueFrom:
-            configMapKeyRef:
-              name: image-tools-configmap
-              key: FTP_PATH
-        - name: FTP_USER
-          valueFrom:
-            configMapKeyRef:
-              name: image-tools-configmap
-              key: FTP_USER
         - name: MAX_UPLOAD_MB
           valueFrom:
             configMapKeyRef:
@@ -63,16 +48,6 @@ spec:
             configMapKeyRef:
               name: image-tools-configmap
               key: IMAGE_PROCESS_VALIDATE_HTTPS_URL
-        - name: FTP_PASS
-          valueFrom:
-            secretKeyRef:
-              name: image-tools-configmap-secret
-              key: FTP_PASS
-        - name: AZURE_BLOB_STORAGE_CONNECTION_STRING
-          valueFrom:
-            secretKeyRef:
-              name: image-tools-configmap-secret
-              key: AZURE_BLOB_STORAGE_CONNECTION_STRING
 
         # Resources configuration
         resources:

@@ -161,3 +161,9 @@ venv/*
 
 # Kubernetes secrets (local development)
 k8s/secret.yaml
+
+# uv
+uv.lock
+
+# HTTP requests
+*.http
