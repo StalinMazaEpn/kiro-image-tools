@@ -162,8 +162,8 @@ kubectl apply -f aks.yml
 | GET | `/api/v1/image/health` | No | Health del servicio de imagen |
 | POST | `/api/v1/image/image-process` | `X-API-KEY` | Procesar imagen con fondo dinámico |
 | GET | `/api/v1/image/temp/<token>` | No | Descargar resultado temporal |
-| GET | `/api/v1/openapi/openapi.json` | No | OpenAPI spec |
-| GET | `/api/v1/openapi/docs` | No | Swagger UI |
+| GET | `/openapi.json` | No | OpenAPI spec |
+| GET | `/docs` | No | Swagger UI |
 
 ---
 
@@ -192,7 +192,7 @@ El archivo `api-tests.http` incluye requests listos para usar con la extensión 
 La API incluye documentación interactiva con Swagger UI:
 
 ```
-http://localhost:8070/api/v1/openapi/docs
+http://localhost:8070/docs
 ```
 
 Desde ahí puedes explorar y ejecutar los endpoints directamente en el navegador.
@@ -249,14 +249,53 @@ Permite procesar una imagen original y centrarla sobre un fondo dinámico enviad
 }
 ```
 
-**Parámetros dinámicos:**
-- `scalePercent` (default: 94) - Escala aplicada al sujeto (1-300%)
-- `minScalePercent` / `maxScalePercent` - Rango válido de escala (default: 20-100%)
-- `paddingPercent` (default: 0) - Padding alrededor del área útil (0-40%)
-- `horizontalAlign` (default: "center") - left|center|right
-- `verticalAlign` (default: "center") - top|center|bottom
-- `offsetX` / `offsetY` (default: 0) - Desplazamiento adicional desde posición alineada
-- `offsetUnit` (default: "px") - px|percent
+### Parámetros dinámicos de composición
+
+Estos parámetros controlan cómo se escala, posiciona y alinea el sujeto (imagen sin fondo) sobre la imagen de fondo.
+
+#### Escalado
+
+| Parámetro | Tipo | Default | Rango | Descripción |
+|-----------|------|---------|-------|-------------|
+| `scalePercent` | float | `94` | 1–300 | Porcentaje de escalado aplicado sobre el **tamaño base de encaje** (fit). El tamaño de encaje es el mayor tamaño que el sujeto puede tener sin exceder el área útil, manteniendo su proporción original. `100` = ocupa todo el área útil; `50` = ocupa la mitad. |
+| `minScalePercent` | float | `20` | 1–300 | Límite inferior para `scalePercent`. Si el valor de `scalePercent` es menor que este, se clampea a `minScalePercent`. |
+| `maxScalePercent` | float | `100` | 1–300 | Límite superior para `scalePercent`. Si el valor de `scalePercent` es mayor que este, se clampea a `maxScalePercent`. |
+
+**Lógica de clamp:** `applied_scale = max(minScalePercent, min(scalePercent, maxScalePercent))`. Si `min > max`, se intercambian automáticamente.
+
+#### Padding
+
+| Parámetro | Tipo | Default | Rango | Descripción |
+|-----------|------|---------|-------|-------------|
+| `paddingPercent` | float | `0` | 0–40 | Porcentaje de padding **por lado** sobre las dimensiones del fondo. Define un margen interno que reduce el "área útil" donde se puede posicionar el sujeto. Ejemplo: con `paddingPercent=10` y un fondo de 1000×1000px, se aplican 100px por lado → área útil = 800×800px. |
+
+#### Alineación
+
+| Parámetro | Tipo | Default | Valores válidos | Descripción |
+|-----------|------|---------|-----------------|-------------|
+| `horizontalAlign` | string | `"center"` | `left`, `center`, `right` | Alineación horizontal del sujeto dentro del área útil. |
+| `verticalAlign` | string | `"center"` | `top`, `center`, `bottom` | Alineación vertical del sujeto dentro del área útil. |
+
+#### Offset (desplazamiento fino)
+
+| Parámetro | Tipo | Default | Rango | Descripción |
+|-----------|------|---------|-------|-------------|
+| `offsetX` | float | `0` | -10000 a 10000 | Desplazamiento horizontal **adicional** aplicado después de la alineación. Positivo = derecha, negativo = izquierda. |
+| `offsetY` | float | `0` | -10000 a 10000 | Desplazamiento vertical **adicional** aplicado después de la alineación. Positivo = abajo, negativo = arriba. |
+| `offsetUnit` | string | `"px"` | `px`, `percent` | Unidad de los offsets. `px` = píxeles absolutos; `percent` = porcentaje del área útil (ej: `offsetX=10` con `percent` = 10% del ancho útil). |
+
+**Nota:** La posición final siempre se clampea para que el sujeto no se salga del área útil del fondo.
+
+#### Flujo visual del algoritmo
+
+```
+Fondo (1000×1000px)
+  └─ paddingPercent: 10% → Área útil: 800×800px (margen de 100px por lado)
+      └─ Sujeto encajado al máximo (fit): 600×800px (respeta proporción)
+          └─ scalePercent: 80% → Sujeto escalado: 480×640px
+              └─ Alineación: center/bottom → posicionado centrado abajo
+                  └─ offsetX: 50px → movido 50px a la derecha
+```
 
 ### Comportamiento:
 - Descarga ambas imágenes desde URLs HTTPS públicas.

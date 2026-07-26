@@ -53,7 +53,9 @@ def create_app():
     app.config["API_TITLE"] = "Image Processing Tools API"
     app.config["API_VERSION"] = "v1"
     app.config["OPENAPI_VERSION"] = "3.0.2"
-    app.config["OPENAPI_URL_PREFIX"] = f"{global_prefix}/openapi"
+    # Swagger UI siempre accesible en /docs independientemente del prefijo de API
+    app.config["OPENAPI_URL_PREFIX"] = "/"
+    app.config["OPENAPI_JSON_PATH"] = "openapi.json"
     app.config["OPENAPI_SWAGGER_UI_PATH"] = "/docs"
     app.config["OPENAPI_SWAGGER_UI_URL"] = (
         "https://cdn.jsdelivr.net/npm/swagger-ui-dist/"
