@@ -28,7 +28,7 @@ Este proyecto implementa una solución optimizada para la remoción de fondos en
 ### Test del Modelo
 ```bash
 # Verificar carga del modelo localmente
-python test_model_loading.py
+uv run python test_model_loading.py
 ```
 
 **Expected output:**
@@ -52,20 +52,26 @@ docker run --rm image-tools:test ls -lh /app/models/
 ```
 ## Construir y ejecutar
 
-### Local con Python (desarrollo)
+### Local con uv (desarrollo)
+
+El proyecto usa [`uv`](https://docs.astral.sh/uv/) como gestor de paquetes y `pyproject.toml` para definir dependencias.
 
 ```bash
 # Instalar uv (una sola vez)
-pip install uv
+# Windows (PowerShell)
+powershell -ExecutionPolicy ByPass -c "irm https://astral.sh/uv/install.ps1 | iex"
+# macOS/Linux
+curl -LsSf https://astral.sh/uv/install.sh | sh
 
-# Instalar dependencias con uv
+# Crear entorno virtual e instalar dependencias
+uv venv
 uv pip install -r pyproject.toml
 
 # Ejecutar servidor Flask en localhost:8070
-python app.py
+uv run python app.py
 
-# Con LOG_LEVEL personalizado
-$env:LOG_LEVEL="DEBUG"; python app.py
+# Con LOG_LEVEL personalizado (PowerShell)
+$env:LOG_LEVEL="DEBUG"; uv run python app.py
 ```
 
 ### Docker (sin Compose)
@@ -90,7 +96,7 @@ docker-compose logs -f image-tools
 # Apagar servicio
 docker-compose down
 
-# Reconstruir imagen (si hay cambios en requirements.txt o Dockerfile)
+# Reconstruir imagen (si hay cambios en pyproject.toml o Dockerfile)
 docker-compose up -d --build
 
 # Ejecutar tests dentro del contenedor
@@ -285,27 +291,20 @@ Permite procesar una imagen original y centrarla sobre un fondo dinámico enviad
 
 Los tests unitarios validan la funcionalidad del endpoint `image-process` incluyendo casos edge para escala, padding, alineación y offsets.
 
-## Requisitos previos
-
-```bash
-# Activar entorno virtual
-.\venv\Scripts\Activate.ps1
-```
-
 ## Ejecutar todos los tests
 
 ```bash
 # Mostrar resultado resumido
-python -m unittest discover -s tests -p "test_*.py"
+uv run python -m unittest discover -s tests -p "test_*.py"
 
 # Mostrar resultado detallado (verbose)
-python -m unittest discover -s tests -p "test_*.py" -v
+uv run python -m unittest discover -s tests -p "test_*.py" -v
 ```
 
 ## Ejecutar solo tests de image-process
 
 ```bash
-python -m unittest discover -s tests -p "test_image_process.py" -v
+uv run python -m unittest discover -s tests -p "test_image_process.py" -v
 ```
 
 ## Tests disponibles
@@ -344,11 +343,11 @@ El logging se configura automáticamente con nivel **INFO** por default. Para ca
 ```bash
 # DEBUG: Ver todos los mensajes de logging
 $env:LOG_LEVEL="DEBUG"
-python -m unittest discover -s tests -p "test_image_process.py" -v
+uv run python -m unittest discover -s tests -p "test_image_process.py" -v
 
 # WARNING: Solo advertencias y errores
 $env:LOG_LEVEL="WARNING"
-python -m unittest discover -s tests -p "test_image_process.py" -v
+uv run python -m unittest discover -s tests -p "test_image_process.py" -v
 
 # Resetear a default (INFO)
 Remove-Item env:LOG_LEVEL -ErrorAction SilentlyContinue
