@@ -1,0 +1,165 @@
+AWSTemplateFormatVersion: '2010-09-09'
+Transform: AWS::Serverless-2016-10-31
+Description: >
+  image-tools - Demo deployment on EC2 t2.micro (Free Tier).
+  Deploys a Docker-based Flask image processing API.
+
+Parameters:
+  Environment:
+    Type: String
+    Default: production
+    AllowedValues:
+      - production
+      - staging
+    Description: Environment name
+
+  ApiTokens:
+    Type: String
+    NoEcho: true
+    Description: Comma-separated API tokens for authentication
+
+  MaxUploadMB:
+    Type: String
+    Default: "10"
+    Description: Maximum upload size in MB
+
+  LogLevel:
+    Type: String
+    Default: INFO
+    AllowedValues:
+      - DEBUG
+      - INFO
+      - WARNING
+      - ERROR
+    Description: Application log level
+
+  InstanceType:
+    Type: String
+    Default: t3.micro
+    AllowedValues:
+      - t2.micro
+      - t3.micro
+    Description: EC2 instance type (t3.micro is Free Tier for newer accounts)
+
+  KeyPairName:
+    Type: AWS::EC2::KeyPair::KeyName
+    Description: Name of an existing EC2 Key Pair for SSH access
+
+  AllowedSSHCidr:
+    Type: String
+    Default: "0.0.0.0/0"
+    Description: CIDR block allowed to SSH (use your IP/32 for security)
+
+  LatestAmiId:
+    Type: AWS::SSM::Parameter::Value<AWS::EC2::Image::Id>
+    Default: /aws/service/ami-amazon-linux-latest/al2023-ami-kernel-default-x86_64
+    Description: Latest Amazon Linux 2023 AMI (auto-resolved via SSM)
+
+Resources:
+  # Security Group - allows HTTP 8070 and SSH
+  ImageToolsSG:
+    Type: AWS::EC2::SecurityGroup
+    Properties:
+      GroupDescription: Security group for image-tools demo
+      SecurityGroupIngress:
+        - IpProtocol: tcp
+          FromPort: 8070
+          ToPort: 8070
+          CidrIp: "0.0.0.0/0"
+          Description: App HTTP access
+        - IpProtocol: tcp
+          FromPort: 22
+          ToPort: 22
+          CidrIp: !Ref AllowedSSHCidr
+          Description: SSH access
+      Tags:
+        - Key: Name
+          Value: image-tools-sg
+
+  # IAM Role for EC2 (CloudWatch logs + ECR pull)
+  EC2Role:
+    Type: AWS::IAM::Role
+    Properties:
+      RoleName: image-tools-ec2-role
+      AssumeRolePolicyDocument:
+        Version: "2012-10-17"
+        Statement:
+          - Effect: Allow
+            Principal:
+              Service: ec2.amazonaws.com
+            Action: sts:AssumeRole
+      ManagedPolicyArns:
+        - arn:aws:iam::aws:policy/CloudWatchAgentServerPolicy
+        - arn:aws:iam::aws:policy/AmazonEC2ContainerRegistryReadOnly
+
+  EC2InstanceProfile:
+    Type: AWS::IAM::InstanceProfile
+    Properties:
+      Roles:
+        - !Ref EC2Role
+
+  # EC2 Instance - Free Tier
+  ImageToolsInstance:
+    Type: AWS::EC2::Instance
+    Properties:
+      InstanceType: !Ref InstanceType
+      ImageId: !Ref LatestAmiId
+      KeyName: !Ref KeyPairName
+      IamInstanceProfile: !Ref EC2InstanceProfile
+      SecurityGroupIds:
+        - !GetAtt ImageToolsSG.GroupId
+      BlockDeviceMappings:
+        - DeviceName: /dev/xvda
+          Ebs:
+            VolumeSize: 20
+            VolumeType: gp3
+            DeleteOnTermination: true
+      Tags:
+        - Key: Name
+          Value: image-tools-demo
+      UserData:
+        Fn::Base64: !Sub |
+          #!/bin/bash -xe
+          exec > /var/log/user-data.log 2>&1
+          echo "=== Updating system ==="
+          dnf update -y
+          echo "=== Installing Docker ==="
+          dnf install -y docker git
+          systemctl start docker
+          systemctl enable docker
+          usermod -aG docker ec2-user
+          echo "=== Configurando swap (1GB) para evitar OOM ==="
+          dd if=/dev/zero of=/swapfile bs=128M count=8
+          chmod 600 /swapfile
+          mkswap /swapfile
+          swapon /swapfile
+          echo '/swapfile swap swap defaults 0 0' >> /etc/fstab
+          echo "=== Creating app directory ==="
+          mkdir -p /opt/image-tools
+          cd /opt/image-tools
+          cat > .env <<ENVEOF
+          IMAGE_TOOLS_API_GLOBAL_PREFIX=/tools/api/v1
+          IMAGE_TOOLS_API_TOKENS=${ApiTokens}
+          MAX_UPLOAD_MB=${MaxUploadMB}
+          IMAGE_PROCESS_VALIDATE_HTTPS_URL=true
+          LOG_LEVEL=${LogLevel}
+          ENVEOF
+          sed -i 's/^[[:space:]]*//' /opt/image-tools/.env
+          echo "=== Setup complete. Waiting for Docker image. ==="
+
+Outputs:
+  InstanceId:
+    Description: EC2 Instance ID
+    Value: !Ref ImageToolsInstance
+
+  PublicIP:
+    Description: Public IP of the EC2 instance
+    Value: !GetAtt ImageToolsInstance.PublicIp
+
+  ServiceUrl:
+    Description: URL of the deployed Image Tools API
+    Value: !Sub "http://${ImageToolsInstance.PublicIp}:8070"
+
+  SSHCommand:
+    Description: Command to SSH into the instance
+    Value: !Sub "ssh -i ${KeyPairName}.pem ec2-user@${ImageToolsInstance.PublicIp}"

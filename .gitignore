@@ -167,3 +167,11 @@ uv.lock
 
 # HTTP requests
 *.http
+
+# AWS / Deploy sensitive files
+*.pem
+.aws/
+*.tar.gz
+
+# Local deploy logs and credentials
+kubernetes/

@@ -1,0 +1,17 @@
+# SAM CLI configuration for image-tools demo deployment (EC2)
+# Usage: sam deploy (uses these defaults)
+
+version = 0.1
+
+[default.deploy.parameters]
+stack_name = "image-tools-demo"
+region = "us-east-1"
+capabilities = "CAPABILITY_NAMED_IAM"
+confirm_changeset = true
+resolve_s3 = true
+
+[default.build.parameters]
+cached = true
+
+[default.validate.parameters]
+lint = true

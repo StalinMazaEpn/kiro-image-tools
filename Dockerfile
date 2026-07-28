@@ -49,9 +49,10 @@ EXPOSE 8070
  
 # Run the application with --preload to share model between workers
 CMD ["gunicorn", "--bind", "0.0.0.0:8070", \
-     "--workers", "2", \
+     "--workers", "1", \
      "--preload", \
-     "--timeout", "300", \
+     "--timeout", "600", \
+     "--graceful-timeout", "300", \
      "--access-logfile", "-", \
      "--error-logfile", "-", \
      "wsgi:app"]
