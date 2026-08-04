@@ -25,6 +25,11 @@ Este proyecto implementa una solución optimizada para la remoción de fondos en
 - `--preload` en Gunicorn para compartir entre workers
 - Modelo embebido, sin descargas en runtime
 
+### 5. **Limpieza Automática de Temporales** (`app/routes/image.py`)
+- Daemon thread que limpia archivos expirados cada 2 min
+- Cleanup de archivos huérfanos al arrancar (post-reinicio)
+- Funciona en local (Windows/Linux) y Docker sin configuración extra
+
 ### Test del Modelo
 ```bash
 # Verificar carga del modelo localmente
@@ -161,6 +166,7 @@ kubectl apply -f aks.yml
 | GET | `/api/v1/health/model` | No | Readiness probe (estado del modelo) |
 | GET | `/api/v1/image/health` | No | Health del servicio de imagen |
 | POST | `/api/v1/image/image-process` | `X-API-KEY` | Procesar imagen con fondo dinámico |
+| POST | `/api/v1/image/remove-background` | `X-API-KEY` | Remover fondo de imagen (sin composición) |
 | GET | `/api/v1/image/temp/<token>` | No | Descargar resultado temporal |
 | GET | `/openapi.json` | No | OpenAPI spec |
 | GET | `/docs` | No | Swagger UI |
@@ -203,11 +209,17 @@ Desde ahí puedes explorar y ejecutar los endpoints directamente en el navegador
 # Health check
 curl http://localhost:8070/api/v1/health
 
-# Image process
+# Image process (con fondo)
 curl -X POST http://localhost:8070/api/v1/image/image-process \
   -H "X-API-KEY: tu-token" \
   -H "Content-Type: application/json" \
   -d '{"imageUrl":"https://example.com/img.png","backgroundUrl":"https://example.com/bg.png","outputFilename":"out.png"}'
+
+# Remove background (solo quitar fondo)
+curl -X POST http://localhost:8070/api/v1/image/remove-background \
+  -H "X-API-KEY: tu-token" \
+  -H "Content-Type: application/json" \
+  -d '{"imageUrl":"https://example.com/img.png","outputFilename":"sin-fondo.png"}'
 ```
 
 ---
@@ -325,6 +337,72 @@ Fondo (1000×1000px)
 	}
 }
 ```
+
+---
+
+## Endpoint: remove-background
+
+Remueve el fondo de una imagen y devuelve el resultado con las dimensiones originales intactas. No aplica composición, escalado ni alineación.
+
+- Autenticación: header `X-API-KEY`
+- Método: `POST`
+- Ruta: `/api/v1/image/remove-background`
+
+### Request:
+
+```json
+{
+	"imageUrl": "https://example.com/producto.png",
+	"outputFilename": "producto-sin-fondo.png"
+}
+```
+
+| Parámetro | Tipo | Requerido | Default | Descripción |
+|-----------|------|-----------|---------|-------------|
+| `imageUrl` | string | Sí | — | URL pública de la imagen (HTTP/HTTPS) |
+| `outputFilename` | string | No | `"removed-bg.png"` | Nombre del archivo de salida (.png) |
+
+### Respuesta exitosa:
+
+```json
+{
+	"success": true,
+	"message": "Fondo removido correctamente. Usa la URL temporal para descargar el archivo.",
+	"filename": "producto-sin-fondo.png",
+	"content_type": "image/png",
+	"download_url": "http://localhost:8070/api/v1/image/temp/<token>",
+	"expires_at": "2026-07-27T15:30:00+00:00",
+	"original_size": {"width": 800, "height": 600}
+}
+```
+
+### Comportamiento:
+- Descarga la imagen desde la URL pública.
+- Remueve el fondo usando rembg/U2NET.
+- **Mantiene las dimensiones originales** de la imagen (no recorta, no escala, no compone sobre fondo).
+- Guarda el resultado como PNG transparente en carpeta temporal (TTL: 15 min).
+- Devuelve URL temporal para descarga.
+
+---
+
+## Limpieza automática de archivos temporales
+
+Los archivos generados por `image-process` y `remove-background` se almacenan temporalmente en disco. Un daemon de limpieza se encarga de eliminarlos automáticamente:
+
+| Mecanismo | Cuándo actúa | Qué limpia |
+|-----------|--------------|------------|
+| **Cleanup lazy** | En cada request de procesamiento o descarga | Archivos cuyo TTL expiró (registrados en memoria) |
+| **Daemon thread** | Cada 2 min (configurable) | Archivos expirados + archivos huérfanos por `mtime` |
+| **Startup sweep** | Al arrancar la app | Archivos huérfanos de ejecuciones anteriores (post-reinicio) |
+
+**Variables de entorno:**
+
+| Variable | Default | Descripción |
+|----------|---------|-------------|
+| `IMAGE_PROCESS_TEMP_TTL_MINUTES` | `15` | Tiempo de vida de archivos temporales |
+| `IMAGE_PROCESS_CLEANUP_INTERVAL_SECONDS` | `120` | Frecuencia del daemon de limpieza |
+
+Esto garantiza que no se acumulen archivos en disco independientemente de la actividad de la API o los reinicios del contenedor.
 
 # Ejecutar Tests
 

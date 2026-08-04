@@ -69,6 +69,107 @@ TEMP_OUTPUT_DIR.mkdir(parents=True, exist_ok=True)
 TEMP_FILES = {}
 TEMP_FILES_LOCK = threading.Lock()
 
+# Intervalo de limpieza del daemon (en segundos)
+try:
+    TEMP_CLEANUP_INTERVAL_SECONDS = int(
+        os.environ.get("IMAGE_PROCESS_CLEANUP_INTERVAL_SECONDS", "120")
+    )
+except ValueError:
+    TEMP_CLEANUP_INTERVAL_SECONDS = 120
+
+_cleanup_thread_started = False
+_cleanup_thread_lock = threading.Lock()
+
+
+def _cleanup_orphaned_files_on_startup() -> None:
+    """Barre TEMP_OUTPUT_DIR al arrancar y elimina archivos cuya fecha de
+    modificación sea mayor al TTL. Cubre archivos huérfanos post-reinicio."""
+    now = datetime.now(timezone.utc)
+    ttl_delta = timedelta(minutes=TEMP_FILE_TTL_MINUTES)
+    removed = 0
+
+    try:
+        for file_path in TEMP_OUTPUT_DIR.iterdir():
+            if not file_path.is_file():
+                continue
+            mtime = datetime.fromtimestamp(file_path.stat().st_mtime, tz=timezone.utc)
+            if (now - mtime) > ttl_delta:
+                try:
+                    file_path.unlink()
+                    removed += 1
+                except OSError:
+                    pass
+    except Exception as exc:
+        logging.warning("Error limpiando archivos huérfanos al arrancar: %s", exc)
+
+    if removed > 0:
+        logging.info("[CLEANUP] Eliminados %d archivos huérfanos al arrancar", removed)
+
+
+def _background_cleanup_loop() -> None:
+    """Loop que corre en un daemon thread. Limpia archivos expirados
+    periódicamente sin depender de requests entrantes."""
+    while True:
+        try:
+            threading.Event().wait(timeout=TEMP_CLEANUP_INTERVAL_SECONDS)
+            _cleanup_expired_temp_files()
+            _cleanup_orphaned_files_by_mtime()
+        except Exception as exc:
+            logging.warning("[CLEANUP] Error en background cleanup: %s", exc)
+
+
+def _cleanup_orphaned_files_by_mtime() -> None:
+    """Elimina archivos en TEMP_OUTPUT_DIR que excedieron el TTL según
+    su fecha de modificación y que no están registrados en TEMP_FILES."""
+    now = datetime.now(timezone.utc)
+    ttl_delta = timedelta(minutes=TEMP_FILE_TTL_MINUTES)
+
+    with TEMP_FILES_LOCK:
+        known_paths = {meta["path"] for meta in TEMP_FILES.values()}
+
+    try:
+        for file_path in TEMP_OUTPUT_DIR.iterdir():
+            if not file_path.is_file():
+                continue
+            if file_path in known_paths:
+                continue
+            mtime = datetime.fromtimestamp(file_path.stat().st_mtime, tz=timezone.utc)
+            if (now - mtime) > ttl_delta:
+                try:
+                    file_path.unlink()
+                    logging.debug("[CLEANUP] Archivo huérfano eliminado: %s", file_path.name)
+                except OSError:
+                    pass
+    except Exception as exc:
+        logging.warning("[CLEANUP] Error limpiando huérfanos por mtime: %s", exc)
+
+
+def start_cleanup_daemon() -> None:
+    """Inicia el daemon de limpieza si no se ha iniciado aún.
+    Es seguro llamar múltiples veces (idempotente)."""
+    global _cleanup_thread_started
+
+    with _cleanup_thread_lock:
+        if _cleanup_thread_started:
+            return
+        _cleanup_thread_started = True
+
+    # Limpiar huérfanos de arranques anteriores
+    _cleanup_orphaned_files_on_startup()
+
+    # Iniciar daemon thread
+    cleanup_thread = threading.Thread(
+        target=_background_cleanup_loop,
+        name="image-tools-temp-cleanup",
+        daemon=True,
+    )
+    cleanup_thread.start()
+    logging.info(
+        "[CLEANUP] Daemon iniciado (intervalo: %ds, TTL: %d min)",
+        TEMP_CLEANUP_INTERVAL_SECONDS,
+        TEMP_FILE_TTL_MINUTES,
+    )
+
 
 class PublicImageDownloadError(Exception):
     """Error al descargar una imagen pública."""

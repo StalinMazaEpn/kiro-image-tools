@@ -88,6 +88,10 @@ def create_app():
     api.register_blueprint(image_bg, url_prefix=global_prefix)
     app.register_blueprint(health_bp, url_prefix=global_prefix)
 
+    # ─── Iniciar daemon de limpieza de archivos temporales ───────
+    from app.routes.image import start_cleanup_daemon
+    start_cleanup_daemon()
+
     # Root health endpoint
     @app.route("/", methods=["GET"])
     def health():
