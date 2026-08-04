@@ -12,6 +12,8 @@ from flask_smorest import Blueprint as SmorestBlueprint
 from app.schemas.image import (
     ImageProcessRequestSchema,
     ImageProcessResponseSchema,
+    RemoveBackgroundRequestSchema,
+    RemoveBackgroundResponseSchema,
     ErrorResponseSchema,
 )
 from PIL import Image
@@ -604,6 +606,135 @@ def imageprocess(request_data):
                 "download_url": download_url,
                 "expires_at": expires_at.isoformat(),
                 "render_metadata": render_metadata,
+            }
+        ),
+        200,
+    )
+
+
+@bp.post("/image/remove-background")
+@bp.doc(
+    security=[{"ApiKeyAuth": []}],
+    summary="Remover fondo de imagen",
+    description="Descarga una imagen por URL pública, remueve el fondo usando U2NET y retorna una URL temporal para descargar la imagen sin fondo con sus dimensiones originales.",
+)
+@bp.arguments(RemoveBackgroundRequestSchema)
+@bp.response(200, RemoveBackgroundResponseSchema)
+@bp.response(400, ErrorResponseSchema)
+@bp.response(401, ErrorResponseSchema)
+@bp.response(413, ErrorResponseSchema)
+@bp.response(500, ErrorResponseSchema)
+@bp.response(502, ErrorResponseSchema)
+@verify_token
+def remove_background(request_data):
+    """Endpoint para remover fondo de una imagen y devolver resultado con dimensiones originales."""
+
+    image_url = request_data.get("imageUrl")
+    output_filename = request_data.get("outputFilename", "removed-bg.png")
+
+    if not image_url:
+        return (
+            jsonify(
+                {
+                    "error": "Bad Request",
+                    "message": "'imageUrl' es obligatorio.",
+                    "success": False,
+                }
+            ),
+            400,
+        )
+
+    try:
+        original_bytes = _download_public_image(image_url, "imageUrl")
+    except ValueError as exc:
+        return (
+            jsonify(
+                {
+                    "error": "Bad Request",
+                    "message": str(exc),
+                    "success": False,
+                }
+            ),
+            400,
+        )
+    except PublicImageTooLargeError as exc:
+        return (
+            jsonify(
+                {
+                    "error": "Payload Too Large",
+                    "message": str(exc),
+                    "success": False,
+                }
+            ),
+            413,
+        )
+    except PublicImageDownloadError as exc:
+        return (
+            jsonify(
+                {
+                    "error": "Bad Gateway",
+                    "message": str(exc),
+                    "success": False,
+                }
+            ),
+            502,
+        )
+
+    try:
+        with BytesIO(original_bytes) as input_bio:
+            with Image.open(input_bio) as input_img:
+                input_image = input_img.convert("RGBA")
+                original_width, original_height = input_image.size
+
+        image_no_bg = _remove_background(input_image)
+
+        output_buffer = BytesIO()
+        image_no_bg.save(output_buffer, format="PNG")
+        output_bytes = output_buffer.getvalue()
+    except Exception as exc:
+        logging.exception("Error al remover fondo de la imagen")
+        return (
+            jsonify(
+                {
+                    "error": "Internal Server Error",
+                    "message": f"No se pudo remover el fondo de la imagen: {exc}",
+                    "success": False,
+                }
+            ),
+            500,
+        )
+    finally:
+        try:
+            output_buffer.close()
+        except Exception:
+            pass
+        try:
+            image_no_bg.close()
+        except Exception:
+            pass
+        try:
+            input_image.close()
+        except Exception:
+            pass
+
+    token, safe_filename, expires_at = _store_temp_output_image(
+        output_bytes, output_filename
+    )
+    download_url = url_for("image.download_temp_image", token=token, _external=True)
+
+    return (
+        jsonify(
+            {
+                "success": True,
+                "message": "Fondo removido correctamente. Usa la URL temporal para descargar el archivo.",
+                "filename": safe_filename,
+                "content_type": "image/png",
+                "download_url": download_url,
+                "expires_at": expires_at.isoformat(),
+                "original_size": {
+                    "width": original_width,
+                    "height": original_height,
+                },
             }
         ),
         200,

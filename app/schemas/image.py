@@ -181,6 +181,68 @@ class ImageProcessResponseSchema(Schema):
     )
 
 
+class RemoveBackgroundRequestSchema(Schema):
+    """Schema para el request de remoción de fondo simple.
+
+    Descarga una imagen desde URL pública, remueve el fondo usando U2NET,
+    y retorna la imagen resultante con sus dimensiones originales intactas.
+    """
+
+    imageUrl = fields.Str(
+        required=True,
+        metadata={
+            "description": "URL pública (HTTP/HTTPS) de la imagen a la que se le removerá el fondo. "
+            "Formatos soportados: PNG, JPEG, JPG. Tamaño máximo configurable por MAX_UPLOAD_MB (default: 10 MB).",
+            "example": "https://example.com/producto.png",
+        },
+    )
+    outputFilename = fields.Str(
+        required=False,
+        load_default="removed-bg.png",
+        metadata={
+            "description": "Nombre sugerido para el archivo de salida. La extensión siempre será .png.",
+            "example": "producto-sin-fondo.png",
+        },
+    )
+
+
+class RemoveBackgroundResponseSchema(Schema):
+    """Schema para la respuesta exitosa de remoción de fondo."""
+
+    success = fields.Bool(
+        metadata={"description": "Indica si la operación fue exitosa (siempre true en respuesta 200)"}
+    )
+    message = fields.Str(
+        metadata={"description": "Mensaje descriptivo del resultado de la operación"}
+    )
+    filename = fields.Str(
+        metadata={"description": "Nombre del archivo generado (siempre con extensión .png)"}
+    )
+    content_type = fields.Str(
+        metadata={"description": "Tipo MIME del contenido generado (siempre image/png)"}
+    )
+    download_url = fields.Str(
+        metadata={
+            "description": "URL temporal para descargar la imagen sin fondo. "
+            "Expira según IMAGE_PROCESS_TEMP_TTL_MINUTES (default: 15 min). "
+            "No requiere autenticación.",
+            "example": "http://localhost:8070/api/v1/image/temp/abc123token",
+        }
+    )
+    expires_at = fields.Str(
+        metadata={
+            "description": "Fecha y hora de expiración de la URL temporal en formato ISO 8601 (UTC).",
+            "example": "2026-05-07T15:30:00+00:00",
+        }
+    )
+    original_size = fields.Dict(
+        metadata={
+            "description": "Dimensiones originales de la imagen (width, height en px).",
+            "example": {"width": 800, "height": 600},
+        }
+    )
+
+
 class ErrorResponseSchema(Schema):
     """Schema para respuestas de error (400, 401, 413, 500, 502)"""
 
